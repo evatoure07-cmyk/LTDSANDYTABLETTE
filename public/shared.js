@@ -6,35 +6,35 @@ export const training={en_attente:'En attente de formation',planifiee:'Formation
 export const advice={favorable:'Favorable',reserve:'Mitigé',defavorable:'Défavorable',a_etudier:'Sans avis'};
 export const state={user:null,items:[],page:'received'};
 export const questions=[
- {title:'Faire connaissance',items:[
-  ['age','Quel âge avez-vous ?','short'],
-  ['about','Pouvez-vous vous présenter ?','long'],
-  ['daily_life','Quelles sont vos occupations au quotidien ?','multi',['Emploi','Études','Activités personnelles','Projets professionnels','Autre']],
-  ['residence','Depuis combien de temps habitez-vous dans l’État ?','single',['Moins d’un mois','1 à 6 mois','6 mois à 1 an','Plus d’un an']]
+ {title:'Faisons connaissance',items:[
+  ['about','Pouvez-vous vous présenter ?','long',null,true],
+  ['current_employment','Travaillez-vous actuellement dans une entreprise ou occupez-vous déjà un poste ?','single',['Oui','Non'],true],
+  ['residence','Depuis combien de temps habitez-vous dans l’État ?','single',['Moins d’un mois','1 à 6 mois','6 mois à 12 mois','Plus d’un an'],true],
+  ['driver_license','Possédez-vous le permis de conduire ?','single',['Oui','Non'],true]
  ]},
- {title:'Votre expérience du LTD',items:[
-  ['work_experience','Avez-vous déjà travaillé dans une entreprise ?','single',['Oui','Non']],
-  ['work_domains','Dans quels domaines avez-vous de l’expérience ?','multi',['Vente','Station-service','Service client','Livraison','Gestion de stock','Aucun']],
-  ['knows_ltd','Savez-vous comment fonctionne un LTD ?','single',['Oui, très bien','J’ai quelques bases','Pas encore'],true],
-  ['invoice','Savez-vous établir une facture ?','single',['Oui, en autonomie','Avec de l’aide','Pas encore'],true],
-  ['skills','Quelles tâches savez-vous faire ?','multi',['Accueillir un client','Encaisser','Préparer une commande','Gérer le stock','Faire un plein','Faire une facture']],
+ {title:'Votre expérience et vos motivations',items:[
+  ['worked_ltd','Avez-vous déjà travaillé dans un LTD ?','single',['Oui','Non'],true],
+  ['knows_ltd','Savez-vous comment fonctionne un LTD ?','single',['Oui','J’ai quelques bases','Non'],true],
+  ['invoice','Savez-vous établir une facture ?','single',['Oui','Non'],true],
   ['why_ltd','Pourquoi souhaitez-vous rejoindre le LTD Sandy Shores ?','long',null,true]
  ]},
- {title:'Disponibilités',items:[
+ {title:'Vos disponibilités',items:[
   ['availability','Quels jours êtes-vous disponible ?','multi',['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'],true],
   ['time_slots','À quels moments de la journée ?','multi',['Matin','Après-midi','Soirée','Nuit']],
-  ['weekly_hours','Combien d’heures pouvez-vous travailler par semaine ?','single',['Moins de 3 heures','3 à 6 heures','7 à 10 heures','Plus de 10 heures'],true],
-  ['strengths','Quelles qualités vous correspondent ?','multi',['Ponctuel(le)','Autonome','Organisé(e)','Sociable','Patient(e)','À l’écoute']]
+  ['weekly_hours','Combien d’heures pouvez-vous travailler à peu près par semaine ?','single',['Moins de 3 heures','3 à 6 heures','7 à 10 heures','Plus de 10 heures'],true]
  ]}
 ];
 export const jobQuestions={
- Vendeur:{title:'Le poste de vendeur',items:[
-  ['sales_cash','Êtes-vous à l’aise avec une caisse ?','single',['Oui','Un peu','Pas encore']],
-  ['sales_tasks','Quelles missions connaissez-vous ?','multi',['Conseiller','Faire des factures','Encaisser','Fabriquer','Gérer les rayons','Vérifier les stocks']]
+ Vendeur:{title:'Contact client et situations — Vendeur',items:[
+  ['sales_contact','Êtes-vous à l’aise avec le contact client ?','single',['Oui','Non'],true],
+  ['sales_help','Un client ne trouve pas le produit qu’il cherche. Que faites-vous ?','multi',['Je lui demande ce qu’il recherche','Je vérifie les produits disponibles','Je lui propose une alternative','Je demande de l’aide si nécessaire'],true],
+  ['sales_price','Un client conteste le prix d’un article. Comment réagissez-vous ?','long',null,true],
+  ['sales_busy','Vous êtes occupé(e) et un client arrive. Comment gérez-vous la situation ?','long']
  ]},
- Pompiste:{title:'Le poste de pompiste',items:[
-  ['pump_experience','Avez-vous déjà travaillé dans une station-service ?','single',['Oui','Non']],
-  ['pump_tasks','Quelles missions connaissez-vous ?','multi',['Remplir un réservoir','Utiliser une pompe','Gérer les bidons','Vérifier le carburant','Faire une facture','Accueillir les clients']]
+ Pompiste:{title:'Contact client et situations — Pompiste',items:[
+  ['pump_contact','Êtes-vous à l’aise pour accueillir et renseigner les clients ?','single',['Oui','Non'],true],
+  ['pump_order','Un client demande plusieurs bidons de carburant. Que vérifiez-vous ?','multi',['La quantité souhaitée','La disponibilité des bidons','Le prix total','La bonne préparation de la commande'],true],
+  ['pump_problem','Un client pense qu’il y a une erreur de quantité ou de prix. Que faites-vous ?','long',null,true]
  ]}
 };
 export const questionsFor=(job)=>[...questions,...(jobQuestions[job]?[jobQuestions[job]]:[])].flatMap(group=>group.items);

@@ -1,0 +1,5 @@
+'Déplacer cette candidature refusée dans Supprimés ? Elle sera définitivement effacée après 48 heures.'))return;try{await api('/api/interviews/'+a.id,{method:'DELETE'});await refresh();toast('Dossier déplacé dans Supprimés.');go('refused');}catch(e){toast(e.message,true);}});
+ $('#restore')?.addEventListener('click',async()=>{try{await api('/api/deleted/'+a.id+'/restore',{method:'POST'});await refresh();toast('Dossier restauré dans Refusés.');go('refused');}catch(e){toast(e.message,true);}});
+}
+async function settings(){layout('<div class="loading">Chargement des paramètres…</div>');try{state.team=(await api('/api/team')).people;settingsView();}catch(e){toast(e.message,true);go('received');}}
+function settingsView(){const dir=state.me.role==='direction';layout(`${heading('GESTION DU PERSONNEL','Paramètres','Gérez les profils autorisés à r

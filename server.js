@@ -5,116 +5,132 @@ import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PORT = Number(process.env.PORT || 3000);
-const dbFile = process.env.DB_FILE || path.join(ROOT, 'data', 'recrutement.sqlite');
-fs.mkdirSync(path.dirname(dbFile), { recursive: true });
-const db = new DatabaseSync(dbFile);
+const ROOT=path.dirname(fileURLToPath(import.meta.url));
+const PORT=Number(process.env.PORT||3000);
+const DB_FILE=process.env.DB_FILE||path.join(ROOT,'data','recrutement.sqlite');
+fs.mkdirSync(path.dirname(DB_FILE),{recursive:true});
+const db=new DatabaseSync(DB_FILE);
 db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
-CREATE TABLE IF NOT EXISTS admins(id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, admin_id INTEGER NOT NULL, expires_at INTEGER NOT NULL, FOREIGN KEY(admin_id) REFERENCES admins(id));
-CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL, schedule TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS applications(id INTEGER PRIMARY KEY, reference TEXT UNIQUE NOT NULL, job_id INTEGER, name TEXT NOT NULL, discord TEXT NOT NULL, phone TEXT NOT NULL, age TEXT NOT NULL, availability TEXT NOT NULL, experience TEXT NOT NULL, motivation TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'received', admin_note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(job_id) REFERENCES jobs(id));
-CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, application_id INTEGER NOT NULL, status TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, FOREIGN KEY(application_id) REFERENCES applications(id) ON DELETE CASCADE);`);
-const hashPassword = (password, salt=crypto.randomBytes(16).toString('hex')) => `${salt}:${crypto.scryptSync(password,salt,64).toString('hex')}`;
-const verifyPassword = (password, stored) => { const [salt, digest]=stored.split(':'); if (!salt || !digest) return false; const a=Buffer.from(digest,'hex'); const b=crypto.scryptSync(password,salt,a.length); return crypto.timingSafeEqual(a,b); };
-const adminUsername = process.env.ADMIN_USER || 'direction';
-const adminPassword = process.env.ADMIN_PASSWORD;
-if (!db.prepare('SELECT id FROM admins LIMIT 1').get()) {
-  if (!adminPassword || adminPassword.length < 12) { console.error('Configure ADMIN_PASSWORD (12 caractères minimum) avant le premier démarrage.'); process.exit(1); }
-  db.prepare('INSERT INTO admins(username,password_hash) VALUES(?,?)').run(adminUsername,hashPassword(adminPassword));
-}
-if (!db.prepare('SELECT id FROM jobs LIMIT 1').get()) {
-  const ins=db.prepare('INSERT INTO jobs(title,description,schedule,active,created_at) VALUES(?,?,?,?,?)');
-  const now=new Date().toISOString();
-  ins.run('Vendeur / Vendeuse','Accueil des clients, vente, conseil et tenue de la boutique.','Service régulier · formation interne',1,now);
-  ins.run('Pompiste','Ravitaillement, service à la station et relation clientèle.','Disponibilités flexibles',1,now);
-  ins.run('Livreur / Livreuse','Préparation et livraison des commandes du LTD Sandy Shores.','Conduite soignée · ponctualité',1,now);
-}
-const statuses = ['received','review','interview','accepted','refused'];
-const limits = new Map();
-function rate(ip, key, max, windowMs) { const k=`${ip}:${key}`; const now=Date.now(); const val=limits.get(k); if(!val || val.until<now){limits.set(k,{count:1,until:now+windowMs}); return true;} val.count++; return val.count<=max; }
-setInterval(()=>{for(const [k,v] of limits) if(v.until<Date.now()) limits.delete(k); db.prepare('DELETE FROM sessions WHERE expires_at<?').run(Date.now());},600_000).unref();
-function parseCookies(req){return Object.fromEntries((req.headers.cookie||'').split(';').map(x=>x.trim().split('=').map(decodeURIComponent)).filter(a=>a.length===2));}
-function admin(req){const token=parseCookies(req).session; if(!token)return null; return db.prepare('SELECT admins.id,admins.username FROM sessions JOIN admins ON admins.id=sessions.admin_id WHERE token_hash=? AND expires_at>?').get(crypto.createHash('sha256').update(token).digest('hex'),Date.now());}
-function send(res,status,obj,headers={}){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...headers});res.end(JSON.stringify(obj));}
-function clean(v,max=500){return typeof v==='string'?v.trim().slice(0,max):'';}
-async function json(req){let body='';for await(const chunk of req){body+=chunk;if(body.length>30_000)throw Error('Corps trop volumineux');}return JSON.parse(body||'{}');}
-const publicJob = j=>({id:j.id,title:j.title,description:j.description,schedule:j.schedule});
-const fullApp = a => ({...a,job_title:a.job_title||'Poste archivé',events:db.prepare('SELECT status,note,created_at FROM events WHERE application_id=? ORDER BY id').all(a.id)});
-const getApp=id=>db.prepare('SELECT applications.*,jobs.title AS job_title FROM applications LEFT JOIN jobs ON jobs.id=applications.job_id WHERE applications.id=?').get(id);
-const webRoot=path.join(ROOT,'public');
-const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon'};
-const server=http.createServer(async(req,res)=>{
+CREATE TABLE IF NOT EXISTS hr_people(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL UNIQUE,role TEXT NOT NULL DEFAULT 'recruteur',active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS hr_sessions(token_hash TEXT PRIMARY KEY,person_id INTEGER NOT NULL,expires_at INTEGER NOT NULL,FOREIGN KEY(person_id) REFERENCES hr_people(id));
+CREATE TABLE IF NOT EXISTS hr_interviews(id INTEGER PRIMARY KEY AUTOINCREMENT,reference TEXT NOT NULL UNIQUE,candidate TEXT NOT NULL,job TEXT NOT NULL,answers TEXT NOT NULL,personal_note TEXT NOT NULL DEFAULT '',recommendation TEXT NOT NULL DEFAULT 'a_etudier',status TEXT NOT NULL DEFAULT 'recu',interviewer_id INTEGER NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,FOREIGN KEY(interviewer_id) REFERENCES hr_people(id));
+CREATE TABLE IF NOT EXISTS hr_comments(id INTEGER PRIMARY KEY AUTOINCREMENT,interview_id INTEGER NOT NULL,author_id INTEGER NOT NULL,note TEXT NOT NULL,created_at TEXT NOT NULL,FOREIGN KEY(interview_id) REFERENCES hr_interviews(id) ON DELETE CASCADE,FOREIGN KEY(author_id) REFERENCES hr_people(id));
+CREATE TABLE IF NOT EXISTS hr_history(id INTEGER PRIMARY KEY AUTOINCREMENT,interview_id INTEGER NOT NULL,actor_id INTEGER NOT NULL,kind TEXT NOT NULL,details TEXT NOT NULL,created_at TEXT NOT NULL,FOREIGN KEY(interview_id) REFERENCES hr_interviews(id) ON DELETE CASCADE,FOREIGN KEY(actor_id) REFERENCES hr_people(id));
+CREATE INDEX IF NOT EXISTS idx_hr_interviews_date ON hr_interviews(created_at);
+CREATE INDEX IF NOT EXISTS idx_hr_interviews_author ON hr_interviews(interviewer_id);`);
+const now=()=>new Date().toISOString();
+const insPerson=db.prepare('INSERT OR IGNORE INTO hr_people(name,role,active,created_at) VALUES(?,?,1,?)');
+insPerson.run('Luciana Angel Mars','direction',now());
+insPerson.run('Blake Mars','direction',now());
+const statuses=['recu','etude','entretien','accepte','refuse','attente'];
+const recommendations=['favorable','reserve','defavorable','a_etudier'];
+const jobs=['Vendeur / Vendeuse','Pompiste','Livreur / Livreuse','Chef d’équipe','Responsable vente','Responsable pompiste','Autre'];
+const answerKeys=['age','discord','phone','availability','experience','experience_detail','weekly_hours','weekends','motivation','client','pricing','cash','team','mobility','conflict','qualities','questions'];
+const clean=(v,max=500)=>typeof v==='string'?v.trim().slice(0,max):'';
+const personPublic=p=>({id:p.id,name:p.name,role:p.role,active:Boolean(p.active)});
+const mapInterview=r=>({...r,answers:JSON.parse(r.answers),interviewer:r.interviewer||''});
+const findPerson=id=>db.prepare('SELECT * FROM hr_people WHERE id=? AND active=1').get(id);
+const hash=v=>crypto.createHash('sha256').update(v).digest('hex');
+const tokens=new Map();
+function rate(ip,key,limit,ms){const k=ip+':'+key,t=Date.now(),v=tokens.get(k);if(!v||v.end<t){tokens.set(k,{count:1,end:t+ms});return true;}return ++v.count<=limit;}
+setInterval(()=>{const n=Date.now();for(const [k,v] of tokens)if(v.end<n)tokens.delete(k);db.prepare('DELETE FROM hr_sessions WHERE expires_at<?').run(n);},600000).unref();
+function cookie(req,name){const raw=(req.headers.cookie||'').split(';').find(p=>p.trim().startsWith(name+'='));return raw?raw.trim().slice(name.length+1):'';}
+function user(req){const t=cookie(req,'hr_session');if(!/^[a-f0-9]{64}$/.test(t))return null;return db.prepare('SELECT p.id,p.name,p.role,p.active FROM hr_sessions s JOIN hr_people p ON p.id=s.person_id WHERE s.token_hash=? AND s.expires_at>? AND p.active=1').get(hash(t),Date.now());}
+const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
+function send(res,code,obj,h={}){res.writeHead(code,{...headers,...h});res.end(JSON.stringify(obj));}
+function fail(msg,code=400){const e=new Error(msg);e.code=code;throw e;}
+async function body(req){let total=0,arr=[];for await(const c of req){total+=c.length;if(total>65000)fail('Contenu trop volumineux.',413);arr.push(c);}try{return JSON.parse(Buffer.concat(arr).toString('utf8')||'{}')}catch{fail('Format de données invalide.');}}
+function detail(id){const a=db.prepare('SELECT h.*,p.name interviewer FROM hr_interviews h JOIN hr_people p ON p.id=h.interviewer_id WHERE h.id=?').get(id);if(!a)return null;return {...mapInterview(a),comments:db.prepare('SELECT c.id,c.note,c.created_at,p.name author FROM hr_comments c JOIN hr_people p ON p.id=c.author_id WHERE c.interview_id=? ORDER BY c.id ASC').all(id),history:db.prepare('SELECT h.kind,h.details,h.created_at,p.name actor FROM hr_history h JOIN hr_people p ON p.id=h.actor_id WHERE h.interview_id=? ORDER BY h.id DESC').all(id)};}
+function log(id,uid,kind,details){db.prepare('INSERT INTO hr_history(interview_id,actor_id,kind,details,created_at) VALUES(?,?,?,?,?)').run(id,uid,kind,details,now());}
+function requireDirection(p){if(p.role!=='direction')fail('Réservé à la direction.',403);}
+const publicRoot=path.join(ROOT,'public');
+const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.ico':'image/x-icon'};
+http.createServer(async(req,res)=>{
  try{
-  const url=new URL(req.url,'http://localhost');const p=url.pathname;
-  const ip=(req.socket.remoteAddress||'unknown');
-  if(p.startsWith('/api/')){
-   if(!rate(ip,'all',180,60_000))return send(res,429,{error:'Trop de requêtes. Réessaie dans une minute.'});
-   if(!['GET','POST','PATCH','DELETE'].includes(req.method))return send(res,405,{error:'Méthode non autorisée'});
-   if(req.method!=='GET'){const origin=req.headers.origin;const host=req.headers.host;if(origin && new URL(origin).host!==host)return send(res,403,{error:'Origine refusée'});}
-   if(p==='/api/config'&&req.method==='GET')return send(res,200,{site:'LTD Sandy Shores',jobs:db.prepare('SELECT * FROM jobs WHERE active=1 ORDER BY id').all().map(publicJob)});
-   if(p==='/api/applications'&&req.method==='POST'){
-    if(!rate(ip,'apply',5,60*60_000))return send(res,429,{error:'Trop de candidatures, réessaie plus tard.'});
-    const b=await json(req); const jobId=Number(b.job_id); const job=db.prepare('SELECT * FROM jobs WHERE id=? AND active=1').get(jobId);
-    if(!job)return send(res,400,{error:'Sélectionne un poste disponible.'});
-    const name=clean(b.name,90),discord=clean(b.discord,90),phone=clean(b.phone,60),age=clean(b.age,10),availability=clean(b.availability,500),experience=clean(b.experience,1200),motivation=clean(b.motivation,1800);
-    if(name.length<3||discord.length<2||phone.length<2||age.length<1||availability.length<5||experience.length<5||motivation.length<20) return send(res,400,{error:'Complète tous les champs. La motivation doit faire au moins 20 caractères.'});
-    const ref=crypto.randomBytes(9).toString('hex').toUpperCase();const now=new Date().toISOString();
-    const r=db.prepare('INSERT INTO applications(reference,job_id,name,discord,phone,age,availability,experience,motivation,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(ref,jobId,name,discord,phone,age,availability,experience,motivation,now,now);
-    db.prepare('INSERT INTO events(application_id,status,created_at) VALUES(?,?,?)').run(r.lastInsertRowid,'received',now);
-    return send(res,201,{reference:ref,status:'received'});
+  const url=new URL(req.url,'http://localhost'),pathname=url.pathname,method=req.method,ip=req.socket.remoteAddress||'unknown';
+  if(pathname.startsWith('/api/')){
+   if(!rate(ip,'all',250,60000))return send(res,429,{error:'Trop de requêtes.'});
+   if(!['GET','POST','PATCH','DELETE'].includes(method))return send(res,405,{error:'Méthode interdite.'});
+   if(method!=='GET'&&req.headers.origin){try{if(new URL(req.headers.origin).host!==req.headers.host)return send(res,403,{error:'Origine interdite.'});}catch{return send(res,403,{error:'Origine invalide.'});}}
+   if(pathname==='/api/people'&&method==='GET')return send(res,200,{people:db.prepare('SELECT id,name,role,active FROM hr_people WHERE active=1 ORDER BY role ASC,id ASC').all().map(personPublic)});
+   if(pathname==='/api/session'&&method==='POST'){
+    if(!rate(ip,'login',30,15*60000))return send(res,429,{error:'Réessaie plus tard.'});
+    const b=await body(req),p=findPerson(Number(b.person_id));if(!p)return send(res,404,{error:'Compte introuvable.'});
+    const t=crypto.randomBytes(32).toString('hex'),exp=Date.now()+7*86400000;
+    db.prepare('INSERT INTO hr_sessions(token_hash,person_id,expires_at) VALUES(?,?,?)').run(hash(t),p.id,exp);
+    return send(res,200,{person:personPublic(p)},{'Set-Cookie':`hr_session=${t}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${process.env.NODE_ENV==='production'?'; Secure':''}`});
    }
-   if(p==='/api/track'&&req.method==='POST'){
-    if(!rate(ip,'track',15,60*60_000))return send(res,429,{error:'Trop de tentatives.'});
-    const b=await json(req);const ref=clean(b.reference,40).toUpperCase();const a=db.prepare('SELECT a.id,a.reference,a.status,a.created_at,a.updated_at,j.title AS job_title FROM applications a LEFT JOIN jobs j ON a.job_id=j.id WHERE a.reference=?').get(ref);
-    if(!a)return send(res,404,{error:'Aucune candidature trouvée avec cette référence.'});
-    return send(res,200,{...a,events:db.prepare('SELECT status,created_at FROM events WHERE application_id=? ORDER BY id').all(a.id)});
+   if(pathname==='/api/logout'&&method==='POST'){const t=cookie(req,'hr_session');if(t)db.prepare('DELETE FROM hr_sessions WHERE token_hash=?').run(hash(t));return send(res,200,{ok:true},{'Set-Cookie':'hr_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'});}
+   const p=user(req);if(!p)return send(res,401,{error:'Choisis ton profil pour ouvrir la tablette.'});
+   if(pathname==='/api/me'&&method==='GET')return send(res,200,{person:personPublic(p)});
+   if(pathname==='/api/team'&&method==='GET')return send(res,200,{people:db.prepare('SELECT id,name,role,active,created_at FROM hr_people ORDER BY active DESC,role ASC,id ASC').all().map(personPublic)});
+   if(pathname==='/api/team'&&method==='POST'){
+    requireDirection(p);const b=await body(req),name=clean(b.name,80),role=clean(b.role,20);
+    if(name.length<3||!['direction','recruteur'].includes(role))fail('Renseigne un nom et un rôle valides.');
+    try{const result=db.prepare('INSERT INTO hr_people(name,role,active,created_at) VALUES(?,?,1,?)').run(name,role,now());return send(res,201,{id:Number(result.lastInsertRowid)});}catch(e){if(/UNIQUE/.test(e.message))fail('Ce nom existe déjà.');throw e;}
    }
-   if(p==='/api/login'&&req.method==='POST'){
-    if(!rate(ip,'login',8,15*60_000))return send(res,429,{error:'Trop de tentatives de connexion.'});
-    const b=await json(req),u=db.prepare('SELECT * FROM admins WHERE username=?').get(clean(b.username,60));
-    if(!u||!verifyPassword(String(b.password||''),u.password_hash))return send(res,401,{error:'Identifiants incorrects.'});
-    const token=crypto.randomBytes(32).toString('hex');db.prepare('INSERT INTO sessions(token_hash,admin_id,expires_at) VALUES(?,?,?)').run(crypto.createHash('sha256').update(token).digest('hex'),u.id,Date.now()+12*60*60_000);
-    const secure=process.env.NODE_ENV==='production'?'; Secure':'';
-    return send(res,200,{username:u.username},{'Set-Cookie':`session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200${secure}`});
+   const teamMatch=pathname.match(/^\/api\/team\/(\d+)$/);
+   if(teamMatch&&method==='PATCH'){
+    requireDirection(p);const id=Number(teamMatch[1]),b=await body(req),target=db.prepare('SELECT * FROM hr_people WHERE id=?').get(id);if(!target)fail('Compte introuvable.',404);
+    if(['Luciana Angel Mars','Blake Mars'].includes(target.name)&&b.active===false)fail('Les profils fondateurs restent actifs.');
+    if(id===p.id&&b.active===false)fail('Tu ne peux pas désactiver ton propre compte.');
+    const role=b.role===undefined?target.role:clean(b.role,20),active=b.active===undefined?target.active:(b.active?1:0);
+    if(!['direction','recruteur'].includes(role))fail('Rôle invalide.');
+    db.prepare('UPDATE hr_people SET active=?,role=? WHERE id=?').run(active,role,id);
+    if(!active)db.prepare('DELETE FROM hr_sessions WHERE person_id=?').run(id);
+    return send(res,200,{ok:true});
    }
-   if(p==='/api/logout'&&req.method==='POST'){
-    const token=parseCookies(req).session;if(token)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(crypto.createHash('sha256').update(token).digest('hex'));
-    return send(res,200,{ok:true},{'Set-Cookie':'session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'});
+   if(pathname==='/api/interviews'&&method==='POST'){
+    if(!rate(ip,'new',60,60000))fail('Trop de demandes.',429);
+    const b=await body(req),candidate=clean(b.candidate,100),job=clean(b.job,80),a=b.answers;
+    if(candidate.length<3||!jobs.includes(job)||!a||typeof a!=='object'||Array.isArray(a))fail('Indique le candidat et le poste.');
+    const answers=Object.fromEntries(answerKeys.map(k=>[k,typeof a[k]==='string'?clean(a[k],1500):Array.isArray(a[k])?a[k].filter(x=>typeof x==='string').map(x=>clean(x,80)).slice(0,5):'']));
+    if(!answers.availability||!answers.motivation||!answers.client||!answers.pricing||!answers.weekly_hours||!answers.team)fail('Réponds aux questions obligatoires.');
+    const note=clean(b.personal_note,3000),rec=clean(b.recommendation,30);
+    if(!recommendations.includes(rec))fail('Avis invalide.');
+    const stamp=now(),reference='SS-'+String(Date.now()).slice(-8)+'-'+crypto.randomBytes(2).toString('hex').toUpperCase();
+    const r=db.prepare('INSERT INTO hr_interviews(reference,candidate,job,answers,personal_note,recommendation,status,interviewer_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(reference,candidate,job,JSON.stringify(answers),note,rec,'recu',p.id,stamp,stamp);
+    log(Number(r.lastInsertRowid),p.id,'creation','Entretien enregistré');
+    return send(res,201,{id:Number(r.lastInsertRowid),reference});
    }
-   const user=admin(req);if(!user)return send(res,401,{error:'Connexion direction requise.'});
-   if(p==='/api/me'&&req.method==='GET')return send(res,200,{username:user.username});
-   if(p==='/api/admin/stats'&&req.method==='GET')return send(res,200,{total:db.prepare('SELECT count(*) n FROM applications').get().n,counts:db.prepare('SELECT status,count(*) count FROM applications GROUP BY status').all(),active_jobs:db.prepare('SELECT count(*) n FROM jobs WHERE active=1').get().n});
-   if(p==='/api/admin/applications'&&req.method==='GET'){
-    const status=clean(url.searchParams.get('status'),30);const search=clean(url.searchParams.get('q'),100);
-    const all=db.prepare(`SELECT a.id,a.reference,a.name,a.discord,a.phone,a.age,a.status,a.created_at,a.updated_at,j.title AS job_title FROM applications a LEFT JOIN jobs j ON j.id=a.job_id WHERE (?='' OR a.status=?) AND (?='' OR a.name LIKE ? OR a.discord LIKE ? OR a.reference LIKE ?) ORDER BY a.created_at DESC LIMIT 300`).all(status,status,search,`%${search}%`,`%${search}%`,`%${search}%`);
-    return send(res,200,{applications:all});
+   if(pathname==='/api/interviews'&&method==='GET'){
+    const q=clean(url.searchParams.get('q'),100),status=clean(url.searchParams.get('status'),30),mine=url.searchParams.get('mine')==='1';
+    if(status&&!statuses.includes(status))fail('Filtre invalide.');
+    const all=db.prepare(`SELECT h.id,h.reference,h.candidate,h.job,h.status,h.recommendation,h.created_at,h.updated_at,h.interviewer_id,p.name interviewer FROM hr_interviews h JOIN hr_people p ON p.id=h.interviewer_id WHERE (?='' OR h.status=?) AND (?=0 OR h.interviewer_id=?) AND (?='' OR h.candidate LIKE ? OR h.job LIKE ? OR h.reference LIKE ?) ORDER BY h.id DESC LIMIT 500`).all(status,status,mine?1:0,p.id,q,`%${q}%`,`%${q}%`,`%${q}%`);
+    const stats=db.prepare('SELECT status,COUNT(*) count FROM hr_interviews GROUP BY status').all();
+    return send(res,200,{interviews:all,stats,total:stats.reduce((n,x)=>n+x.count,0)});
    }
-   const appMatch=p.match(/^\/api\/admin\/applications\/(\d+)$/);
-   if(appMatch){const id=Number(appMatch[1]),a=getApp(id);if(!a)return send(res,404,{error:'Candidature introuvable.'});
-    if(req.method==='GET')return send(res,200,fullApp(a));
-    if(req.method==='PATCH'){
-     const b=await json(req);const status=clean(b.status,20);if(!statuses.includes(status))return send(res,400,{error:'Statut invalide.'});
-     const note=clean(b.admin_note,3000);const now=new Date().toISOString();
-     db.prepare('UPDATE applications SET status=?,admin_note=?,updated_at=? WHERE id=?').run(status,note,now,id);
-     if(a.status!==status)db.prepare('INSERT INTO events(application_id,status,created_at) VALUES(?,?,?)').run(id,status,now);
-     return send(res,200,fullApp(getApp(id)));
-    }
-    if(req.method==='DELETE'){db.prepare('DELETE FROM events WHERE application_id=?').run(id);db.prepare('DELETE FROM applications WHERE id=?').run(id);return send(res,200,{ok:true});}
+   const m=pathname.match(/^\/api\/interviews\/(\d+)$/);
+   if(m&&method==='GET'){const a=detail(Number(m[1]));if(!a)fail('Entretien introuvable.',404);return send(res,200,{interview:a});}
+   if(m&&method==='PATCH'){
+    const id=Number(m[1]),b=await body(req),a=detail(id);if(!a)fail('Entretien introuvable.',404);
+    const status=clean(b.status||'',30);if(!statuses.includes(status))fail('Statut invalide.');
+    if(['accepte','refuse'].includes(status))requireDirection(p);
+    db.prepare('UPDATE hr_interviews SET status=?,updated_at=? WHERE id=?').run(status,now(),id);
+    if(a.status!==status)log(id,p.id,'statut',`${a.status} → ${status}`);
+    return send(res,200,{interview:detail(id)});
    }
-   if(p==='/api/admin/jobs'){
-    if(req.method==='GET')return send(res,200,{jobs:db.prepare('SELECT * FROM jobs ORDER BY id DESC').all()});
-    if(req.method==='POST'){const b=await json(req),title=clean(b.title,90),description=clean(b.description,600),schedule=clean(b.schedule,140);if(title.length<3||description.length<5)return send(res,400,{error:'Renseigne un titre et une description.'});const r=db.prepare('INSERT INTO jobs(title,description,schedule,active,created_at) VALUES(?,?,?,?,?)').run(title,description,schedule,1,new Date().toISOString());return send(res,201,{id:Number(r.lastInsertRowid)});}
+   if(m&&method==='DELETE'){
+    requireDirection(p);const id=Number(m[1]);if(!detail(id))fail('Entretien introuvable.',404);
+    db.prepare('DELETE FROM hr_comments WHERE interview_id=?').run(id);db.prepare('DELETE FROM hr_history WHERE interview_id=?').run(id);db.prepare('DELETE FROM hr_interviews WHERE id=?').run(id);
+    return send(res,200,{ok:true});
    }
-   const jobMatch=p.match(/^\/api\/admin\/jobs\/(\d+)$/);
-   if(jobMatch&&req.method==='PATCH'){const b=await json(req),job=db.prepare('SELECT * FROM jobs WHERE id=?').get(Number(jobMatch[1]));if(!job)return send(res,404,{error:'Poste introuvable.'});const title=clean(b.title??job.title,90),description=clean(b.description??job.description,600),schedule=clean(b.schedule??job.schedule,140),active=b.active===undefined?job.active:Number(Boolean(b.active));if(title.length<3||description.length<5)return send(res,400,{error:'Titre ou description trop courte.'});db.prepare('UPDATE jobs SET title=?,description=?,schedule=?,active=? WHERE id=?').run(title,description,schedule,active,job.id);return send(res,200,{ok:true});}
-   if(p==='/api/admin/password'&&req.method==='POST') {const b=await json(req),u=db.prepare('SELECT * FROM admins WHERE id=?').get(user.id);if(!verifyPassword(String(b.current||''),u.password_hash))return send(res,400,{error:'Mot de passe actuel incorrect.'});if(String(b.next||'').length<12)return send(res,400,{error:'Le nouveau mot de passe doit contenir au moins 12 caractères.'});db.prepare('UPDATE admins SET password_hash=? WHERE id=?').run(hashPassword(String(b.next)),user.id);db.prepare('DELETE FROM sessions WHERE admin_id=?').run(user.id);return send(res,200,{ok:true},{'Set-Cookie':'session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'});}
-   return send(res,404,{error:'Route inconnue.'});
+   const cm=pathname.match(/^\/api\/interviews\/(\d+)\/comments$/);
+   if(cm&&method==='POST'){
+    const id=Number(cm[1]),a=detail(id);if(!a)fail('Entretien introuvable.',404);
+    const b=await body(req),note=clean(b.note,2000);if(note.length<2)fail('Écris un commentaire.');
+    db.prepare('INSERT INTO hr_comments(interview_id,author_id,note,created_at) VALUES(?,?,?,?)').run(id,p.id,note,now());
+    log(id,p.id,'commentaire','Commentaire ajouté');return send(res,201,{interview:detail(id)});
+   }
+   if(pathname==='/api/backup'&&method==='GET'){
+    requireDirection(p);return send(res,200,{version:2,exported_at:now(),people:db.prepare('SELECT id,name,role,active,created_at FROM hr_people').all(),interviews:db.prepare('SELECT * FROM hr_interviews').all().map(mapInterview),comments:db.prepare('SELECT * FROM hr_comments').all(),history:db.prepare('SELECT * FROM hr_history').all()});
+   }
+   return send(res,404,{error:'Page inconnue.'});
   }
-  if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405);return res.end();}
-  let file=p==='/'?'index.html':decodeURIComponent(p).slice(1); const absolute=path.resolve(webRoot,file);if(!absolute.startsWith(webRoot+path.sep)&&absolute!==path.join(webRoot,'index.html')){res.writeHead(403);return res.end();}
-  fs.readFile(absolute,(err,data)=>{if(err){res.writeHead(404);res.end('Introuvable');return;}res.writeHead(200,{'Content-Type':mime[path.extname(file)]||'application/octet-stream','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",'Referrer-Policy':'same-origin'});res.end(req.method==='HEAD'?undefined:data);});
- } catch(e){console.error(e);send(res,400,{error:e instanceof SyntaxError?'JSON invalide.':e.message||'Erreur serveur'});}
-});
-server.listen(PORT,'0.0.0.0',()=>console.log(`LTD recrutement accessible : http://localhost:${PORT}`));
+  if(!['GET','HEAD'].includes(method)){res.writeHead(405);return res.end();}
+  const rel=pathname==='/'?'index.html':decodeURIComponent(pathname).slice(1),file=path.resolve(publicRoot,rel);
+  if(!file.startsWith(publicRoot+path.sep)){res.writeHead(403);return res.end();}
+  fs.readFile(file,(err,data)=>{if(err){res.writeHead(404);return res.end('Fichier introuvable');}
+   res.writeHead(200,{'Content-Type':mime[path.extname(file)]||'application/octet-stream','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','Content-Security-Policy':"default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",'Cache-Control':'no-cache'});res.end(method==='HEAD'?undefined:data);});
+ }catch(e){console.error('API',e.message);return send(res,e.code||400,{error:e.message||'Erreur serveur.'});}
+}).listen(PORT,'0.0.0.0',()=>console.log('LTD entretien interne disponible sur '+PORT));

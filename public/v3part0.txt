@@ -1,0 +1,48 @@
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=v=>new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'});
+const datetime=v=>new Date(v).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+const initials=v=>String(v||'').split(/\s+/).slice(0,2).map(w=>w.slice(0,1)).join('').toUpperCase();
+const jobs=['Vendeur','Pompiste'];
+const statuses={recu:'Reçue',accepte:'Acceptée',refuse:'Refusée'};
+const statusStyle={recu:'new',accepte:'good',refuse:'bad'};
+const recommendation={favorable:'Favorable',reserve:'Mitigé',defavorable:'Défavorable',a_etudier:'Sans avis'};
+const training={en_attente:'En attente de formation',planifiee:'Formation planifiée',terminee:'Formation terminée'};
+const groups=[
+ {title:'Faire connaissance',sub:'Son parcours et sa vie',items:[
+  {id:'age',label:'Quel âge avez-vous ?',type:'short',optional:true},
+  {id:'about',label:'Pouvez-vous vous présenter en quelques mots ?',type:'long',optional:true},
+  {id:'daily_life',label:'Quelles sont vos principales occupations ?',type:'multi',options:['Emploi','Études','Activités personnelles','Projets professionnels','Autre'],optional:true},
+  {id:'residence',label:'Depuis combien de temps habitez-vous dans l’État ?',type:'single',options:['Moins d’un mois','1 à 6 mois','6 mois à 1 an','Plus d’un an'],optional:true}
+ ]},
+ {title:'Expérience et connaissance du LTD',sub:'Des questions simples pour mieux le connaître',items:[
+  {id:'work_experience',label:'Avez-vous déjà travaillé dans une entreprise ?',type:'single',options:['Oui','Non'],optional:true},
+  {id:'work_domains',label:'Dans quels domaines avez-vous déjà de l’expérience ?',type:'multi',options:['Vente','Station-service','Livraison','Service client','Gestion de stock','Autre','Aucune expérience'],optional:true},
+  {id:'knows_ltd',label:'Savez-vous à peu près comment fonctionne un LTD ?',type:'single',options:['Oui, je connais bien','J’ai quelques bases','Non, pas encore']},
+  {id:'invoice',label:'Savez-vous faire des factures ?',type:'single',options:['Oui, sans aide','Oui, avec un peu d’aide','Non, mais je peux apprendre']},
+  {id:'skills',label:'Quelles tâches savez-vous déjà réaliser ?',type:'multi',options:['Accueillir un client','Conseiller un client','Encaisser une vente','Préparer une commande','Ranger les stocks','Suivre une livraison','Faire un plein'],optional:true},
+  {id:'why_ltd',label:'Pourquoi voulez-vous travailler au LTD Sandy Shores ?',type:'long'}
+ ]},
+ {title:'Disponibilités et qualités',sub:'Plusieurs réponses peuvent être sélectionnées',items:[
+  {id:'availability',label:'Quels jours êtes-vous disponible ?',type:'multi',options:['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche']},
+  {id:'time_slots',label:'Sur quelles plages horaires êtes-vous disponible ?',type:'multi',options:['Matin','Après-midi','Soirée','Nuit'],optional:true},
+  {id:'weekly_hours',label:'Combien d’heures pouvez-vous travailler par semaine ?',type:'single',options:['Moins de 3 heures','3 à 6 heures','7 à 10 heures','Plus de 10 heures']},
+  {id:'strengths',label:'Quelles qualités vous correspondent ?',type:'multi',options:['Ponctuel(le)','Organisé(e)','Sociable','Autonome','Patient(e)','À l’écoute','À l’aise en équipe'],optional:true}
+ ]}
+];
+const roleQuestions={
+ Vendeur:{title:'Questions pour le poste de vendeur',sub:'Vente, caisse et produits',items:[
+  {id:'sales_cash',label:'Êtes-vous à l’aise avec une caisse et les paiements ?',type:'single',options:['Oui','Un peu','Pas encore'],optional:true},
+  {id:'sales_tasks',label:'Quelles missions de vente pourriez-vous réaliser ?',type:'multi',options:['Conseiller les clients','Créer des factures','Encaisser','Faire de la fabrication','Gérer les rayons','Vérifier les stocks'],optional:true}
+ ]},
+ Pompiste:{title:'Questions pour le poste de pompiste',sub:'Station-service et approvisionnement',items:[
+  {id:'pump_experience',label:'Avez-vous déjà travaillé dans une station-service ?',type:'single',options:['Oui','Non'],optional:true},
+  {id:'pump_tasks',label:'Quelles tâches de station maîtrisez-vous ?',type:'multi',options:['Remplir un réservoir','Utiliser une pompe','Gérer les bidons','Vérifier le stock de carburant','Faire une facture','Accueillir les automobilistes'],optional:true}
+ ]}
+};
+const allQs=[...groups.flatMap(g=>g.items),...Object.values(roleQuestions).flatMap(g=>g.items)];
+const previousQuestions={phone:'Numéro de téléphone',experience:'Expérience professionnelle',experience_detail:'Expérience détaillée',weekends:'Disponibilités particulières',motivation:'Motivation',client:'Relation avec les clients',pricing:'Respect des prix',cash:'Gestion de la caisse',team:'Travail en équipe',mobility:'Mobilité',conflict:'Relations avec les collègues',qualities:'Qualités et défauts',questions:'Questions finales'};
+const state={me:null,people:[],page:'received',list:[],deleted:[],team:[],selected:null,search:'',busy:false};
+let toastTimer;
+function toast(m,bad=false){const el=$('#toast');el.textContent=m;el.className='visible'+(bad?' error':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className='',4000);}
+async function api(url,{method='GET',data}={}){const r=await fetch(url,{method,credentials:'same-origin',headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify(data):undefined});let j={};try{j=await r.j
